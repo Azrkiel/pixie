@@ -64,7 +64,7 @@ tags, and a blue cursor flies to those spots.
 
 | Option | Upside | Downside | Verdict |
 |---|---|---|---|
-| **Electron + TypeScript** | Toolchain already installed. A transparent click-through top-most window takes ~10 lines. Canvas gives smooth 60 fps drawing. Official Anthropic TS SDK with tool runner. Mature packages for global keys, window info and installers | ~150 MB RAM, ~90 MB installer | **Chosen** |
+| **Electron + TypeScript** | Toolchain already installed. A transparent click-through top-most window takes ~10 lines. Canvas gives smooth 60 fps drawing. Official Anthropic TS SDK with tool runner. Mature packages for global keys, window info and installers | ~330 MB RAM across 4 processes (measured in Phase 1), ~90 MB installer | **Chosen** |
 | Tauri (Rust + WebView2) | Tiny and fast | Rust not installed; WebView2 transparency and click-through quirks; steeper learning curve | Port later only if RAM matters |
 | C# WPF / WinUI | Most "native"; best DPI and UI Automation access | .NET SDK not installed; animation and drawing take far more code | No |
 | Python + PyQt (what the Windows clone [Clacky](https://github.com/Raynan00/clacky) uses) | Quick to hack | Packaging pain; weaker animation | No |
@@ -347,12 +347,17 @@ export interface Agent<Input> {
 ### Phase 1 — Overlay foundation
 
 **Step-by-step plan:** [`docs/plans/2026-09-24-phase-1-overlay-foundation.md`](docs/plans/2026-09-24-phase-1-overlay-foundation.md)
-(code already type-checked, unit-tested and built on this machine). **Build mode:** single session, no parallel lanes (§9.3).
+**Build mode:** single session, no parallel lanes (§9.3).
+
+**Status: DONE (2026-09-24), tagged `phase-1`.** All 10 acceptance checks pass. Two Windows quirks were fixed during
+the build: the taskbar was left uncovered, and a full-monitor window read as a "fullscreen app". A security review
+passed after fixes: the debug screenshot is now gated, permissions and navigation are denied by default, and the CSP is tighter. Details are in the phase plan's Results section.
 
 **Build:** project scaffold (esbuild + TypeScript + Vitest). A transparent, click-through, top-most, non-focusable
 overlay on the display under the cursor, hidden from screen capture. A 60 Hz cursor feed over typed IPC. Spring-physics
 follow, idle bob, and a glowing purple arrow sprite. A tray icon with Show/Hide and Quit. `Ctrl+Alt+P` toggles Pixie.
-`Ctrl+Alt+S` runs a dev capture check.
+`Ctrl+Alt+S` runs a dev capture check, only with `PIXIE_DEBUG=1`. `src/main/harden.ts` makes permissions,
+navigation and new windows deny-by-default.
 
 **Done when:**
 - Pixie follows smoothly with no jitter or overshoot, and hovers gently when you stop.
@@ -405,6 +410,7 @@ lands within 2 px of targets at 125 % scaling. Bubbles never clip in any corner.
 - `src/main/conversation.ts`: keeps the last 10 turns, **text only**. Old screenshots are dropped, so cost per question stays flat. "New conversation" in the tray resets it.
 - `src/main/command-bar.ts` + `src/renderer/command-bar.{html,ts}`: `Ctrl+Alt+Space` opens a small focusable input near Pixie. Enter asks; Esc closes or cancels.
 - Overlay: the bubble types the streamed text and actions fire as they're parsed. The overlay now needs clickable bubble buttons, so switch to `setIgnoreMouseEvents(true, { forward: true })` with hover hit-testing.
+- Security (from the Phase 1 review): with more than one page, serve them from a custom `app://` protocol (`protocol.handle`) instead of `file://`, per Electron's security checklist. Each new page keeps the strict CSP. Model text is always rendered as text, never as HTML.
 - `evals/pointing/`: 10+ screenshots of *your* apps, each with a target box and question in `cases.json`. `npm run eval:pointing` scores hit or miss, latency and cost. Run it at effort `low` and `medium`, then keep the cheaper setting that scores ≥ 8/10. *(One run ≈ $0.30–0.60 at Opus 5 prices, so approve before running.)*
 
 **Done when:** pointing eval ≥ 8/10. A typed question shows first words ≤ 2.5 s later (p50 of 10). Conductor tests
@@ -416,7 +422,7 @@ Per-question cost is logged.
 **Build:**
 - `src/main/push-to-talk.ts`: `uiohook-napi` global key down/up. Hold **Ctrl+Alt ≥ 250 ms with no other key** to talk; pressing any other key cancels, so `Ctrl+Alt+P/S/Space` never trigger it. The chord logic is a pure state machine with tests.
 - **Key-down captures the screenshot immediately**, while Claude is still waiting for your words. Pixie switches to Listening (a ring that pulses with mic level).
-- `src/renderer/mic.ts`: `getUserMedia` plus an AudioWorklet produce 16 kHz PCM chunks for main. The permission handler allows `media` only for Pixie's own pages.
+- `src/renderer/mic.ts`: `getUserMedia` plus an AudioWorklet produce 16 kHz PCM chunks for main. Extend `src/main/harden.ts` so `media` (audio only) is allowed for Pixie's own pages; everything else stays denied.
 - `src/main/stt/`: a `SpeechToText` interface (`start()` → `push(pcm)` / `finish(): Promise<string>`).
   - v1: **Deepgram streaming** (`@deepgram/sdk`), with a live transcript in the bubble.
   - Alternative: **local Whisper** (free, private, more setup) behind the same interface.
@@ -480,6 +486,7 @@ call. A mic blocked in Windows Privacy → the bubble names the exact setting. R
   - `electron-builder` NSIS installer with a real icon and a Start-menu entry.
   - Auto-start at login (`app.setLoginItemSettings`).
   - Unsigned builds show SmartScreen's "More info → Run anyway"; a code-signing certificate is optional.
+  - Flip Electron fuses with `@electron/fuses` (from the Phase 1 security review): `RunAsNode` off, `EnableNodeOptionsEnvironmentVariable` off, `EnableNodeCliInspectArguments` off, `OnlyLoadAppFromAsar` on, `EnableEmbeddedAsarIntegrityValidation` on.
 - **Sharing with friends later:** put the API key behind a tiny proxy (a Cloudflare Worker, as Clicky does) so it never ships inside the installer.
 
 **Done when:** a fresh install from the installer works from the Start menu. It survives sleep/resume and monitor

@@ -836,7 +836,7 @@ Run `npm start`, go through each check, and fill in the **Results** table below.
 - [ ] **4. Focus.** Open Notepad and type continuously while moving the mouse around. Typing is never interrupted, and Notepad stays the active window.
 - [ ] **5. Z-order.** Pixie stays above normal windows and above the taskbar. Click the taskbar, then check again. *If Pixie drops behind the taskbar after that click, note it; Phase 6 re-asserts top-most.*
 - [ ] **6. Hidden.** Pixie is not on the taskbar and not in Alt+Tab.
-- [ ] **7. Capture exclusion.** Press `Ctrl+Alt+S`, then open the PNG:
+- [ ] **7. Capture exclusion.** Start Pixie with `$env:PIXIE_DEBUG="1"; npm start`. The capture shortcut has been dev-only since the security review. Press `Ctrl+Alt+S`, then open the PNG:
   ```powershell
   ii (Get-ChildItem "$env:APPDATA\pixie\debug" | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
   ```
@@ -861,17 +861,42 @@ git tag phase-1
 
 | # | Check | Pass? | Notes / numbers |
 |---|---|---|---|
-| 1 | Follow smooth, crisp | [ ] | |
-| 2 | Idle bob | [ ] | |
-| 3 | Click-through | [ ] | |
-| 4 | Never steals focus | [ ] | |
-| 5 | Above windows + taskbar | [ ] | |
-| 6 | Not in taskbar / Alt+Tab | [ ] | |
-| 7 | Excluded from capture (1920×1080) | [ ] | |
-| 8 | Notification state = 5 | [ ] | |
-| 9 | CPU moving / idle | [ ] | moving: __ % · idle: __ % |
-| 10 | Single instance | [ ] | |
-| — | Needed `PIXIE_NO_GPU=1`? | yes / no | |
+| 1 | Follow smooth, crisp | [x] | confirmed by user 2026-09-24 |
+| 2 | Idle bob | [x] | confirmed by user |
+| 3 | Click-through | [x] | confirmed by user; Win32 `WS_EX_TRANSPARENT` |
+| 4 | Never steals focus | [x] | confirmed by user; Win32 `WS_EX_NOACTIVATE`, never the foreground window |
+| 5 | Above windows + taskbar | [x] | confirmed by user; Win32 `WS_EX_TOPMOST`, rect 1536×863 DIP covers the taskbar |
+| 6 | Not in taskbar / Alt+Tab | [x] | confirmed by user; Win32 `WS_EX_TOOLWINDOW`, no `WS_EX_APPWINDOW`. Tray Quit works |
+| 7 | Excluded from capture (1920×1080) | [x] | affinity `0x11`; PNG 1920×1080 had 0 Pixie-purple pixels at her position (automated, 2026-09-24) |
+| 8 | Notification state = 5 | [x] | Was **2** with a full-monitor window. Fixed with height − 1: visible = 5, hidden = 5 |
+| 9 | CPU moving / idle | [x] | 1.44 % of machine (16 threads) over 8 s · 332 MB across 4 processes |
+| 10 | Single instance | [x] | 2nd launch exits in ~1 s, process count unchanged (Chromium cache-lock log lines are harmless) |
+| — | Needed `PIXIE_NO_GPU=1`? | no | not needed so far; confirm Pixie isn't a black rectangle (check 1) |
+| — | `Ctrl+Alt+P` toggle | [x] | verified via synthesized keypress (notification-state experiment) |
+
+### Security review (2026-09-24, xvant-security)
+
+**Checked:**
+- all Phase 1 source against Electron's security checklist
+- the IPC surface (no `ipcMain` handlers; the preload exposes one callback and doesn't leak the IPC event)
+- file writes, global shortcuts
+- `npm audit` (0 vulnerabilities), git history for secrets (none)
+- no `eval`/`innerHTML`/`openExternal`/remote content, no listeners or debug port
+
+| # | Severity | Finding | Status |
+|---|---|---|---|
+| M1 | Medium (privacy) | `Ctrl+Alt+S` was always registered. The global hotkey steals a common shortcut (JetBrains Settings, VS Server Explorer), and each press silently wrote an unencrypted full-screen PNG to `%APPDATA%\pixie\debug` | **Fixed:** registered only when `PIXIE_DEBUG=1`. Verified: 0 files written without the flag. The test capture was deleted |
+| L1 | Low | No permission handler, so Electron auto-granted renderer permission requests (control probe: geolocation/notifications `granted`) | **Fixed:** `src/main/harden.ts` denies all. Verified: `denied`, mic request gets `NotAllowedError` |
+| L2 | Low | Navigation and `window.open` were unrestricted | **Fixed:** `will-navigate` prevented, window-open denied. Verified: `window.open` returns `null`, the URL stays `file://` |
+| I1 | Info | CSP `default-src 'self'` could be tighter | **Fixed:** `default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`. Verified: script runs, 0 violations |
+| I2 | Deferred | Electron fuses (RunAsNode, NODE_OPTIONS, `--inspect`, asar integrity) | PLAN.md Phase 6 packaging |
+| I3 | Deferred | Custom `app://` protocol instead of `file://` | PLAN.md Phase 3 |
+
+The code blocks in Tasks 6–7 above show the plan as written. The shipped code also has `src/main/harden.ts`, the `PIXIE_DEBUG` gate in `main.ts`, and the tighter CSP in `index.html`.
+
+**Deviations from the original plan code, found and fixed during execution:**
+1. The `BrowserWindow` constructor clamps its size to the work area, so the taskbar was uncovered (1536×816). Fixed by calling `setBounds` after construction.
+2. An exact monitor-size top-most window made Windows report "fullscreen app" (`QUNS_BUSY`), muting notifications. Fixed by making the overlay 1 px shorter.
 
 ### Troubleshooting
 

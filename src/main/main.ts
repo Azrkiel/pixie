@@ -1,6 +1,7 @@
 import { app, globalShortcut, screen, type BrowserWindow, type Tray } from "electron";
 import { saveDebugScreenshot } from "./capture-check";
 import { startCursorFeed } from "./cursor-feed";
+import { hardenElectron } from "./harden";
 import { createOverlayWindow } from "./overlay-window";
 import { createTray } from "./tray";
 
@@ -27,17 +28,21 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.whenReady().then(() => {
+    hardenElectron();
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     overlay = createOverlayWindow(display);
     stopFeed = startCursorFeed(overlay, display);
     tray = createTray({ toggle: toggleOverlay, quit: () => app.quit() });
 
     registerShortcut("Control+Alt+P", toggleOverlay);
-    registerShortcut("Control+Alt+S", () => {
-      saveDebugScreenshot(display)
-        .then((file) => console.log(`[pixie] capture check saved -> ${file}`))
-        .catch((err) => console.error("[pixie] capture check failed:", err));
-    });
+    // Dev-only: writes a full-resolution screenshot to disk, so it must never be registered by default.
+    if (process.env.PIXIE_DEBUG === "1") {
+      registerShortcut("Control+Alt+S", () => {
+        saveDebugScreenshot(display)
+          .then((file) => console.log(`[pixie] capture check saved -> ${file}`))
+          .catch((err) => console.error("[pixie] capture check failed:", err));
+      });
+    }
     const { width, height } = display.bounds;
     console.log(`[pixie] overlay on display ${display.id}: ${width}x${height} DIP @ ${display.scaleFactor}x`);
   });
