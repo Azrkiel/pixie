@@ -583,6 +583,8 @@ export function createOverlayWindow(display: Display): BrowserWindow {
     },
   });
 
+  // The constructor clamps the size to the work area (screen minus taskbar); re-apply so Pixie can cover the taskbar.
+  win.setBounds(display.bounds);
   win.setAlwaysOnTop(true, "screen-saver"); // above the taskbar too
   win.setIgnoreMouseEvents(true); // clicks fall through to the apps underneath
   win.setContentProtection(true); // WDA_EXCLUDEFROMCAPTURE: Pixie never shows up in its own screenshots
