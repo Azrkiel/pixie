@@ -1,6 +1,6 @@
 import type { Frame, PixieAction } from "../shared/actions";
 import { imageLengthToLocal, imageToLocal } from "../shared/coords";
-import type { Size } from "../shared/geometry";
+import { clamp, type Size } from "../shared/geometry";
 import type { StageCommand } from "../shared/ipc";
 import { clearAnnotations, createAnnotation, pruneAnnotations, type Annotation, type Shape } from "./annotations";
 import { next, type BehaviorState } from "./behavior";
@@ -76,7 +76,9 @@ export function applyStage(s: StageState, c: StageCommand, now: number, env: Sta
       const { action, frame } = c;
       if (action.type === "clear") return { ...s, annotations: clearAnnotations(s.annotations, now) };
       if (action.type === "point") {
-        const target = imageToLocal({ x: action.x, y: action.y }, frame, env.display);
+        const p = imageToLocal({ x: action.x, y: action.y }, frame, env.display);
+        // The screenshot's last row/column maps just past the overlay (1 px shorter than the display): keep the tip on it.
+        const target = { x: clamp(p.x, 0, env.viewport.width - 1), y: clamp(p.y, 0, env.viewport.height - 1) };
         return { ...s, behavior: next(s.behavior, { type: "point", target, label: action.label }, now, env.viewport) };
       }
       const added = createAnnotation(s.nextAnnotationId, toShape(action, frame, env.display), now);

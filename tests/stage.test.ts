@@ -19,6 +19,12 @@ describe("applyStage", () => {
     expect(s.behavior.label).toBe("Save");
   });
 
+  it("keeps a target at the screenshot's far edge on the overlay, which is 1 px shorter than the display", () => {
+    // Review swarm S1 (confirmed by repro): image (1920, 1080) mapped to (1536, 864), off an overlay of 1536x863.
+    const s = applyStage(fresh(), act({ type: "point", x: 1920, y: 1080 }), 0, ENV);
+    expect(s.behavior.target).toEqual({ x: 1535, y: 862 });
+  });
+
   it("converts drawings to overlay px, radii included", () => {
     const s = applyStage(fresh(), act({ type: "circle", x: 960, y: 540, r: 70 }), 0, ENV);
     expect(s.annotations[0].shape).toEqual({ kind: "circle", center: { x: 768, y: 432 }, r: 56 });
