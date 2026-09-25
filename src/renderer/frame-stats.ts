@@ -23,6 +23,18 @@ export function summarizeFrames(frameMs: number[]): FrameSummary | null {
 const fmt = (name: string, s: FrameSummary | null) =>
   s ? `${name} n=${s.count} fps=${s.fps} p95=${s.p95Ms.toFixed(1)}ms max=${s.maxMs.toFixed(1)}ms slow=${s.slow}` : `${name} n=0`;
 
+/** A frame this slow gets its own log line saying who stalled. */
+export const SLOW_FRAME_LOG_MS = 50;
+
+/**
+ * One slow frame, attributed: if Pixie's own work in the previous frame filled most of the gap, she caused it;
+ * otherwise the time went elsewhere (other tasks, GPU, compositor, the rest of the system).
+ */
+export function describeSlowFrame(gapMs: number, pixieWorkMs: number): string {
+  const cause = pixieWorkMs > gapMs / 2 ? "pixie" : "outside pixie (system / GPU / compositor)";
+  return `[pixie:slow] gap=${gapMs.toFixed(0)}ms pixie-work=${pixieWorkMs.toFixed(1)}ms -> ${cause}`;
+}
+
 /** Debug builds only: logs a frame-time summary every `windowMs`, split into all frames and animating frames. */
 export class FrameStats {
   private all: number[] = [];
@@ -34,7 +46,9 @@ export class FrameStats {
     private readonly windowMs = 5000,
   ) {}
 
-  record(frameMs: number, isAnimating: boolean): void {
+  /** `prevWorkMs`: how long the previous frame's own work took (drawing, state updates). */
+  record(frameMs: number, isAnimating: boolean, prevWorkMs: number): void {
+    if (frameMs > SLOW_FRAME_LOG_MS) this.log(describeSlowFrame(frameMs, prevWorkMs));
     this.all.push(frameMs);
     if (isAnimating) this.animating.push(frameMs);
     const now = performance.now();

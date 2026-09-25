@@ -94,7 +94,14 @@ function drawLabel(tip: Vec, speech: Speech | null): void {
 }
 
 const stats = debug ? new FrameStats((line) => console.log(line)) : null;
+if (debug) {
+  // Main-thread tasks over 50 ms (ours or Chromium's): with [pixie:slow] lines, this shows who stalled a frame.
+  new PerformanceObserver((list) => {
+    for (const e of list.getEntries()) console.log(`[pixie:longtask] ${e.duration.toFixed(0)}ms`);
+  }).observe({ type: "longtask", buffered: true });
+}
 let prev = performance.now();
+let prevWorkMs = 0;
 
 function frame(): void {
   // One clock for everything: the IPC handlers above also stamp events with performance.now().
@@ -120,7 +127,8 @@ function frame(): void {
   drawLabel(tip, speech);
   if (speech) drawBubble(ctx, speech.layout, speech.lines, speech.alpha);
 
-  stats?.record(dt * 1000, mode === "flying" || mode === "returning" || stage.annotations.length > 0);
+  stats?.record(dt * 1000, mode === "flying" || mode === "returning" || stage.annotations.length > 0, prevWorkMs);
+  prevWorkMs = performance.now() - now;
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
