@@ -373,6 +373,12 @@ navigation and new windows deny-by-default.
 **Why before the AI:** every agent's output is just a list of actions. If the engine is proven with scripted actions,
 the agents only have to produce actions.
 
+**Status: DONE (2026-09-24), tagged `phase-2`.**
+- Built by 3 parallel lane agents, all green on the first try.
+- 77 tests pass, and the tour runs at 60 fps. Pixie's own work is ≤ 3.7 ms/frame; the rare stalls seen came from outside her code.
+- Review swarm: 1 confirmed bug fixed (edge targets past the 1 px-shorter overlay), plus 1 design fix (the pure `tickStage`).
+- You confirmed the tour by eye.
+
 **Step-by-step plan:** [`docs/plans/2026-09-24-phase-2-motion-drawing.md`](docs/plans/2026-09-24-phase-2-motion-drawing.md)
 (pre-verified: 71 tests, 60 fps tour, screenshot-checked layout; critiqued by a plan-reviewer agent, and its fixes are applied). **Build mode:** 3 parallel lanes (§9.4).
 

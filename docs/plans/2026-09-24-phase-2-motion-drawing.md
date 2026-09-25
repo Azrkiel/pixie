@@ -2328,9 +2328,9 @@ Get-ChildItem "$env:APPDATA\pixie\debug" -Filter *.png | ForEach-Object { Remove
 | 3 | Tip on target (±3 px incl. outline) | L3 script | [x] | all 4 targets: first fill pixel at target + (3, 3) |
 | 4 | Bubbles never clip, labels never overlap | L3 captures + sweep tests | [x] | 4 crops checked by eye; sweep tests green |
 | 5 | Pixie still excluded from captures without `PIXIE_CAPTURABLE` | L3 Step 4 | [x] | 0 Pixie pixels around her position |
-| 6 | Flights arc smoothly, the tip leads, turns and settles without snapping | your eyes | [ ] | |
-| 7 | Circle, arrow, box, underline and note look hand-drawn, stroke on, and fade | your eyes | [ ] | |
-| 8 | Returns to the cursor after the tour; a mid-tour restart is clean | your eyes | [ ] | |
+| 6 | Flights arc smoothly, the tip leads, turns and settles without snapping | your eyes | [x] | confirmed by user 2026-09-24 ("it works") |
+| 7 | Circle, arrow, box, underline and note look hand-drawn, stroke on, and fade | your eyes | [x] | confirmed by user |
+| 8 | Returns to the cursor after the tour; a mid-tour restart is clean | your eyes | [x] | confirmed by user |
 | 9 | Review swarm: confirmed findings fixed | swarm + verifier | [x] | 1 bug confirmed and fixed (`5012c7a`), 1 design fix (`1b251bb`), 2 refuted; details below |
 
 ### Review swarm (L4 Step 1)
