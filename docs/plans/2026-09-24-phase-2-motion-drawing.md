@@ -2323,15 +2323,43 @@ Get-ChildItem "$env:APPDATA\pixie\debug" -Filter *.png | ForEach-Object { Remove
 
 | # | Check | How | Pass? | Notes |
 |---|---|---|---|---|
-| 1 | 71 unit tests | `npm test` | [ ] | |
-| 2 | 60 fps while animating | debug frame stats | [ ] | |
-| 3 | Tip on target (±3 px incl. outline) | L3 script | [ ] | |
-| 4 | Bubbles never clip, labels never overlap | L3 captures + sweep tests | [ ] | |
-| 5 | Pixie still excluded from captures without `PIXIE_CAPTURABLE` | L3 Step 4 | [ ] | |
+| 1 | 71 unit tests | `npm test` | [x] | 73 after the slow-frame attribution (see below) |
+| 2 | 60 fps while animating | debug frame stats | [x] | 9 tours: 7 with 0 slow animating frames. Pixie's own work is ≤ 3.7 ms/frame. One capture-free tour had a burst of 100–175 ms stalls, and one capturable tour had one 87 ms frame; neither reproduced in 6 more tours. Attributed to the system, not Pixie (details below) |
+| 3 | Tip on target (±3 px incl. outline) | L3 script | [x] | all 4 targets: first fill pixel at target + (3, 3) |
+| 4 | Bubbles never clip, labels never overlap | L3 captures + sweep tests | [x] | 4 crops checked by eye; sweep tests green |
+| 5 | Pixie still excluded from captures without `PIXIE_CAPTURABLE` | L3 Step 4 | [x] | 0 Pixie pixels around her position |
 | 6 | Flights arc smoothly, the tip leads, turns and settles without snapping | your eyes | [ ] | |
 | 7 | Circle, arrow, box, underline and note look hand-drawn, stroke on, and fade | your eyes | [ ] | |
 | 8 | Returns to the cursor after the tour; a mid-tour restart is clean | your eyes | [ ] | |
-| 9 | Review swarm: confirmed findings fixed | swarm + verifier | [ ] | |
+| 9 | Review swarm: confirmed findings fixed | swarm + verifier | [x] | 1 bug confirmed and fixed (`5012c7a`), 1 design fix (`1b251bb`), 2 refuted; details below |
+
+### Review swarm (L4 Step 1)
+
+| Reviewer | Finding | Verdict | Outcome |
+|---|---|---|---|
+| correctness + architecture | S1: a point at the screenshot's far edge (1920, 1080) mapped to (1536, 864), off the 1536×863 overlay | **CONFIRMED** by the verifier's repro (`expected 1536 to be ≤ 1535`) | Fixed in `applyStage` by clamping the target to the overlay; regression test added (`5012c7a`) |
+| architecture | `speechLayout` expired the bubble by mutating state inside a paint helper, bypassing the pure reducers | Design issue (judged by the Lead) | Pure `tickStage` now owns motion, drawing lifetimes and bubble expiry; painting is read-only; 3 tests (`1b251bb`) |
+| concurrency | S2: the cursor feed stamps `t` with `Date.now()` while the renderer uses `performance.now()` | **REFUTED**: `t` is never read (dead data) | No change |
+| concurrency | S3: a bubble is never cleared if `now < shownAt` | **REFUTED**: every timestamp is monotonic `performance.now()` | Path removed anyway by `tickStage` |
+| architecture | `pixieBodyRect` lives in `bubble.ts` | Low | Deferred |
+| security | none | — | Phase 1 posture intact; note for Phase 3: never log secrets (debug builds forward the renderer console) |
+
+The verifier refused to execute code without a sandbox, which is its rule. It wrote the S1 repro; the Lead read it and ran it.
+
+**Follow-up (Phase 5 polish):** Pixie's body extends down and to the right of her tip, so near the bottom or right edge her tip stays on target but part of her body is clipped. Consider flipping the sprite when she points near those edges.
+
+### Frame-hitch investigation (L3, xvant-debug)
+
+**Symptom:** one capture-free tour logged 12 frames of 100–175 ms, and one capturable tour logged a single 87 ms frame.
+
+**Temporary instrumentation** (per-frame work time, `longtask` entries, JS heap) showed:
+- Pixie's work per frame is **0.8–3.7 ms**.
+- The heap stays flat at **10.0 MB**, so it is not garbage collection.
+- The only long task is 145 ms at page start-up, not during animation.
+
+**Hypothesis "the debug screen capture causes it": rejected.** Three tours with a capture right before each showed no stalls; the worst frames were 20.6 ms and 22.5 ms. With 6 extra tours clean, the stall is outside Pixie's code: the system, GPU or compositor on a hybrid-GPU laptop.
+
+**Kept permanently in debug builds** (`4611d32`): any frame over 50 ms logs `[pixie:slow] gap=… pixie-work=… -> pixie | outside pixie`, and long tasks are logged too, so a recurrence names its cause.
 
 ### Recorded for later phases (from the plan review)
 
