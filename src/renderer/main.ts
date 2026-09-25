@@ -1,5 +1,5 @@
 import type { Size, Vec } from "../shared/geometry";
-import { drawAnnotation, pruneAnnotations } from "./annotations";
+import { drawAnnotation } from "./annotations";
 import { initialState, next, pixiePose } from "./behavior";
 import {
   BUBBLE_FONT,
@@ -20,7 +20,7 @@ import {
 } from "./bubble";
 import { FrameStats } from "./frame-stats";
 import { drawPixie } from "./pixie-sprite";
-import { applyStage, type StageEnv, type StageState } from "./stage";
+import { applyStage, tickStage, type StageEnv, type StageState } from "./stage";
 
 const debug = new URLSearchParams(location.search).get("debug") === "1";
 
@@ -71,14 +71,12 @@ interface Speech {
   alpha: number;
 }
 
+/** Read-only: lays out the current bubble for painting. Its lifetime is handled by `tickStage`. */
 function speechLayout(tip: Vec, now: number): Speech | null {
   const { bubble } = stage;
   if (!bubble) return null;
   const alpha = bubbleAlpha(bubble.shownAt, bubble.text, now);
-  if (alpha <= 0) {
-    if (now > bubble.shownAt) stage = { ...stage, bubble: null }; // its reading time is over
-    return null;
-  }
+  if (alpha <= 0) return null;
   const measure = measureWith(BUBBLE_FONT);
   const lines = limitLines(wrapText(bubble.text, BUBBLE_MAX_TEXT_WIDTH, measure));
   return { layout: layoutBubble(tip, measureBubble(lines, measure), viewport()), lines, alpha };
@@ -108,11 +106,7 @@ function frame(): void {
   const now = performance.now();
   const dt = (now - prev) / 1000;
   prev = now;
-  stage = {
-    ...stage,
-    behavior: next(stage.behavior, { type: "tick", dtSec: dt }, now, viewport()),
-    annotations: pruneAnnotations(stage.annotations, now),
-  };
+  stage = tickStage(stage, dt, now, env());
 
   const { mode } = stage.behavior;
   const pose = pixiePose(stage.behavior, now);

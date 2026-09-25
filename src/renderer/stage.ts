@@ -2,9 +2,9 @@ import type { Frame, PixieAction } from "../shared/actions";
 import { imageLengthToLocal, imageToLocal } from "../shared/coords";
 import type { Size } from "../shared/geometry";
 import type { StageCommand } from "../shared/ipc";
-import { clearAnnotations, createAnnotation, type Annotation, type Shape } from "./annotations";
+import { clearAnnotations, createAnnotation, pruneAnnotations, type Annotation, type Shape } from "./annotations";
 import { next, type BehaviorState } from "./behavior";
-import { BUBBLE_FADE_IN_MS, bubbleAlpha } from "./bubble";
+import { BUBBLE_FADE_IN_MS, bubbleAlpha, bubbleVisibleMs } from "./bubble";
 
 /** The oldest drawings are dropped beyond this, so a runaway answer can't pile up hundreds of strokes. */
 export const MAX_ANNOTATIONS = 24;
@@ -44,6 +44,20 @@ export function toShape(action: DrawAction, frame: Frame, display: Size): Shape 
     case "note":
       return { kind: "note", at: p(action.x, action.y), text: action.text };
   }
+}
+
+/**
+ * Advance everything that changes with time alone: motion, drawing lifetimes, and the bubble's reading time.
+ * Pure, like `applyStage`. Together they are the only ways the stage state changes, so painting stays read-only.
+ */
+export function tickStage(s: StageState, dtSec: number, now: number, env: StageEnv): StageState {
+  const bubbleOver = s.bubble !== null && now - s.bubble.shownAt >= bubbleVisibleMs(s.bubble.text);
+  return {
+    ...s,
+    behavior: next(s.behavior, { type: "tick", dtSec }, now, env.viewport),
+    annotations: pruneAnnotations(s.annotations, now),
+    bubble: bubbleOver ? null : s.bubble,
+  };
 }
 
 /** Apply one stage command. Pure: the renderer keeps the returned state and paints it each frame. */
