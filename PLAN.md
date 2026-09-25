@@ -373,17 +373,24 @@ navigation and new windows deny-by-default.
 **Why before the AI:** every agent's output is just a list of actions. If the engine is proven with scripted actions,
 the agents only have to produce actions.
 
+**Step-by-step plan:** [`docs/plans/2026-09-24-phase-2-motion-drawing.md`](docs/plans/2026-09-24-phase-2-motion-drawing.md)
+(pre-verified: 71 tests, 60 fps tour, screenshot-checked layout; critiqued by a plan-reviewer agent, and its fixes are applied). **Build mode:** 3 parallel lanes (§9.4).
+
 **Build:**
-- `src/shared/actions.ts`: the `PixieAction` union (the §6 tag table) plus `Frame` (screenshot width/height and display id).
-- `src/shared/coords.ts`: add `imageToLocal`, `localToImage`, `clampToRect`. Tests cover 1920×1080 on 1536×864 (×0.8), a negative-origin monitor, and clamping.
-- `src/shared/flight.ts`: `planFlight(from, to, now)` builds a cubic Bézier arc (lift = 20 % of distance, max 160 px, bending away from screen edges). Duration is `clamp(250 + 0.6·distance, 350, 1100)` ms with ease-in-out. `sampleFlight(f, now)` returns `{pos, angle, done}`. Tests: exact endpoints, duration bounds, no NaN on zero-length flights.
+- `src/shared/actions.ts`: the `PixieAction` union (the §6 tag table) plus `Frame` (screenshot width/height; the display id is deferred to Phase 6 multi-monitor).
+- `src/shared/ipc.ts`: one ordered `pixie:stage` channel carrying `StageCommand` (`action` / `say` / `release`).
+- `src/shared/coords.ts`: add `imageToLocal`, `localToImage`, `imageLengthToLocal`. Tests cover 1920×1080 on 1536×864 (×0.8) and a 4K screenshot downsized to 2576 px.
+- `src/shared/flight.ts`: `planFlight(from, to, startMs, viewport)` builds a cubic Bézier arc (lift = 20 % of distance, max 160 px, bowing toward the screen's middle, never off screen). Duration is `clamp(250 + 0.6·distance, 350, 1100)` ms with ease-in-out. `sampleFlight(f, now)` returns `{pos, angle, done}`. Tests: exact endpoints, duration bounds, no NaN on zero-length flights.
 - `src/renderer/behavior.ts`: the §5.2 state machine as a pure reducer `next(state, event, now)`, tested with a fake clock.
 - `src/renderer/annotations.ts`: circle, box, arrow, underline and note. Each strokes on over 400 ms and fades after 8 s or on `clear`. The hand-drawn wobble uses a seeded RNG, so it is deterministic and testable.
-- `src/renderer/bubble.ts`: speech bubble. The pure `layoutBubble(anchor, size, viewport)` flips sides near edges.
-- `src/main/demo.ts` + `demos/tour.json`: `Ctrl+Alt+D` plays a scripted tour (point → circle → arrow → box → note → clear).
+- `src/renderer/bubble.ts`: speech bubble. The pure `layoutBubble(anchor, size, viewport)` flips sides near edges. `placeLabel` puts the target label on the first spot clear of Pixie and the bubble (a screen-sweep test proves it).
+- `src/main/demo.ts` + `src/main/demo-tour.ts`: `Ctrl+Alt+D` (debug builds) plays a typed, compiler-checked scripted tour (point → circle → arrow → box → underline → note → clear → release).
+- `src/renderer/stage.ts`: a pure `applyStage(state, command, now, env)`. It swaps bubble text without blinking and caps drawings at 24. This is the seam Phase 3's Conductor drives.
+- Dev telemetry: frame-time stats logged to the terminal, and `PIXIE_CAPTURABLE=1` (debug only) so screenshots can verify drawing.
 
 **Done when:** the tour runs at a steady 60 fps (DevTools Performance: no frame > 20 ms during flights). Pixie's tip
-lands within 2 px of targets at 125 % scaling. Bubbles never clip in any corner. `npm test` passes (~25 tests).
+lands within 2 px of targets at 125 % scaling. Bubbles never clip in any corner, even with long text. Rotation never
+snaps. `npm test` passes (71 tests).
 
 **Risk:** a full-screen canvas redraw plus `shadowBlur` gets expensive. Pre-render the sprite to an offscreen canvas if frames take over 4 ms.
 
@@ -410,6 +417,11 @@ lands within 2 px of targets at 125 % scaling. Bubbles never clip in any corner.
 - `src/main/conversation.ts`: keeps the last 10 turns, **text only**. Old screenshots are dropped, so cost per question stays flat. "New conversation" in the tray resets it.
 - `src/main/command-bar.ts` + `src/renderer/command-bar.{html,ts}`: `Ctrl+Alt+Space` opens a small focusable input near Pixie. Enter asks; Esc closes or cancels.
 - Overlay: the bubble types the streamed text and actions fire as they're parsed. The overlay now needs clickable bubble buttons, so switch to `setIgnoreMouseEvents(true, { forward: true })` with hover hit-testing.
+- **Carried over from the Phase 2 plan review (design these in, don't bolt them on):**
+  - **Answer lifetimes follow the answer, not timers.** Pointing holds until `release`, with a ~30 s safety timeout. Drawings and the bubble start fading on `release`. Phase 2 uses fixed timers: 6 s point hold, drawings 8 s, bubble at most 9 s.
+  - **Extend `StageCommand` rather than replacing it.** Add a `speechOffset` on actions plus a renderer-side queue, a `reset` command for barge-in, and a renderer → main channel for word boundaries and idle state. `applyStage` in `src/renderer/stage.ts` is the seam; the behaviour reducer only gains modes.
+  - Send stage commands only after the overlay's `did-finish-load`.
+  - Capture the overlay's own display. `Frame` has no display id until Phase 6.
 - Security (from the Phase 1 review): with more than one page, serve them from a custom `app://` protocol (`protocol.handle`) instead of `file://`, per Electron's security checklist. Each new page keeps the strict CSP. Model text is always rendered as text, never as HTML.
 - `evals/pointing/`: 10+ screenshots of *your* apps, each with a target box and question in `cases.json`. `npm run eval:pointing` scores hit or miss, latency and cost. Run it at effort `low` and `medium`, then keep the cheaper setting that scores ≥ 8/10. *(One run ≈ $0.30–0.60 at Opus 5 prices, so approve before running.)*
 
@@ -578,7 +590,7 @@ How the Claude Code agents *build* Pixie, as opposed to §7, which is how Pixie'
 | Phase | Contracts (Lead writes first) | Wave 1 lanes | Wave 2 lanes | Lead integrates |
 |---|---|---|---|---|
 | **1** | — | **none:** too small, run in one session | — | everything |
-| **2** | `actions.ts`, `geometry.ts` additions | A: `coords.ts` + `flight.ts` · B: `annotations.ts` + `bubble.ts` · C: `behavior.ts` | — | `demo.ts`, `demos/tour.json`, renderer wiring |
+| **2** | `actions.ts`, `ipc.ts` (`StageCommand`), `geometry.ts` additions, preload | A: `coords.ts` + tour player + tour · B: `bubble.ts` + `annotations.ts` · C: `flight.ts` + `behavior.ts` (flight moved here: behaviour imports it, and lanes must not depend on each other) | — | frame stats, overlay debug flags, `main.ts` wiring, renderer |
 | **3** | `agents/types.ts`, IPC channels (bubble, actions, command bar) | A: `tag-parser.ts` · B: `capture.ts` + `secrets.ts` · C: command bar + streaming bubble + hover hit-test | D: `evals/pointing` runner | `claude.ts`, `conductor.ts`, `local-commands.ts`, `explainer.ts` + prompt |
 | **4** | `stt/types.ts`, TTS interface, push-to-talk events | A: push-to-talk chord logic · B: mic worklet + Deepgram STT · C: TTS + word-sync scheduler | D: Router + `evals/routing` | barge-in wiring through the cancellation tree |
 | **5** | inbox + handoff event types | A: Walkthrough · B: Verifier · C: Background worker + inbox + tray task list | D: idle personality · E: curator + window context + quick skills | Conductor updates, handoff wiring |
@@ -676,7 +688,6 @@ Pixie/
   evals/
     pointing/              screenshot + target-box cases and scorer (P3)
     routing/               labelled utterances for the Router (P4)
-  demos/                   scripted choreography for engine testing (P2)
   build.mjs  package.json  tsconfig.json
 ```
 
