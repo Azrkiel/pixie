@@ -1,8 +1,15 @@
 import { BrowserWindow, type Display } from "electron";
 import path from "node:path";
 
+export interface OverlayOptions {
+  /** Renderer logs frame stats (`?debug=1`). */
+  debug: boolean;
+  /** Skip capture exclusion so screenshots can verify drawing. Dev-only: Pixie then appears in every screenshot. */
+  capturable: boolean;
+}
+
 /** Full-display transparent layer: always on top, click-through, invisible to screen capture. */
-export function createOverlayWindow(display: Display): BrowserWindow {
+export function createOverlayWindow(display: Display, opts: OverlayOptions): BrowserWindow {
   const { x, y, width, height } = display.bounds;
   const win = new BrowserWindow({
     x,
@@ -38,8 +45,8 @@ export function createOverlayWindow(display: Display): BrowserWindow {
   win.setBounds({ x, y, width, height: height - 1 });
   win.setAlwaysOnTop(true, "screen-saver"); // above the taskbar too
   win.setIgnoreMouseEvents(true); // clicks fall through to the apps underneath
-  win.setContentProtection(true); // WDA_EXCLUDEFROMCAPTURE: Pixie never shows up in its own screenshots
-  win.loadFile(path.join(__dirname, "../renderer/index.html"));
+  if (!opts.capturable) win.setContentProtection(true); // WDA_EXCLUDEFROMCAPTURE: Pixie never shows up in its own screenshots
+  win.loadFile(path.join(__dirname, "../renderer/index.html"), { query: opts.debug ? { debug: "1" } : {} });
   win.once("ready-to-show", () => win.showInactive());
   return win;
 }
